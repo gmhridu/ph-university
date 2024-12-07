@@ -6,6 +6,7 @@ import { academicFacultyRoutes } from '../modules/academicFaculity/academicFacul
 import { academicDepartmentRoutes } from '../modules/academicDepartment/academicDepartment.route';
 import { AdminRoutes } from '../modules/admin/admin.route';
 import { FacultyRoutes } from '../modules/faculty/faculty.route';
+import { CourserRoutes } from '../modules/course/course.route';
 
 type TModuleRoutes = {
   path: string;
@@ -42,6 +43,10 @@ const moduleRoutes: TModuleRoutes[] = [
   {
     path: '/academic-departments',
     route: academicDepartmentRoutes,
+  },
+  {
+    path: '/courses',
+    route: CourserRoutes,
   },
 ];
 
