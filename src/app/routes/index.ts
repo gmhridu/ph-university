@@ -4,6 +4,8 @@ import { UserRoutes } from '../modules/user/user.route';
 import { academicSemesterRoutes } from '../modules/academicSemester/academicSemester.route';
 import { academicFacultyRoutes } from '../modules/academicFaculity/academicFaculty.route';
 import { academicDepartmentRoutes } from '../modules/academicDepartment/academicDepartment.route';
+import { AdminRoutes } from '../modules/admin/admin.route';
+import { FacultyRoutes } from '../modules/faculty/faculty.route';
 
 type TModuleRoutes = {
   path: string;
@@ -18,8 +20,16 @@ const moduleRoutes: TModuleRoutes[] = [
     route: UserRoutes,
   },
   {
-    path: '/student',
+    path: '/students',
     route: StudentRoutes,
+  },
+  {
+    path: '/admins',
+    route: AdminRoutes,
+  },
+  {
+    path: '/faculties',
+    route: FacultyRoutes,
   },
   {
     path: '/academic-semesters',
