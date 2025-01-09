@@ -26,6 +26,8 @@ app.use('/api/v1', router);
 
 // app.get('/', test);
 
+// ok
+
 app.use(globalErrorHandler);
 
 //Not Found
