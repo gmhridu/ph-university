@@ -10,10 +10,16 @@ import { AcademicSemesterRoutes } from '../modules/academicSemester/academicSeme
 import { semesterRegistrationRoutes } from '../modules/semesterRegistration/semesterRegistration.route';
 import { StudentRoutes } from '../modules/student/student.route';
 import { UserRoutes } from '../modules/user/user.route';
+import { EnrolledCourseRoutes } from '../modules/EnrolledCourse/enrolledCourse.route';
+
+type TModuleRoutes = {
+  path: string;
+  route: Router;
+};
 
 const router = Router();
 
-const moduleRoutes = [
+const moduleRoutes: TModuleRoutes[] = [
   {
     path: '/users',
     route: UserRoutes,
@@ -57,6 +63,10 @@ const moduleRoutes = [
   {
     path: '/auth',
     route: AuthRoutes,
+  },
+  {
+    path: '/enrolled-courses',
+    route: EnrolledCourseRoutes,
   },
 ];
 

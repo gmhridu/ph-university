@@ -24,7 +24,8 @@ const getAllFaculties = catchAsync(async (req, res) => {
     statusCode: httpStatus.OK,
     success: true,
     message: 'Faculties are retrieved succesfully',
-    data: result,
+    meta: result.meta,
+    data: result.result,
   });
 });
 
@@ -43,7 +44,7 @@ const updateFaculty = catchAsync(async (req, res) => {
 
 const deleteFaculty = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const result = await FacultyServices.deleteStudentFromDB(id);
+  const result = await FacultyServices.deleteFacultyFromDB(id);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

@@ -18,16 +18,23 @@ import {
   generateFacultyId,
   generateStudentId,
 } from './user.utils';
+import { sendImageToCloudinary } from '../../utils/sendImageToCloudinary';
 
-const createStudentIntoDB = async (password: string, payload: TStudent) => {
+const createStudentIntoDB = async (
+  file: any,
+  password: string,
+  payload: TStudent,
+) => {
   // create a user object
   const userData: Partial<TUser> = {};
 
-  //if password is not given , use deafult password
+  //if password is not given , use default password
   userData.password = password || (config.default_password as string);
 
   //set student role
   userData.role = 'student';
+  // set student email
+  userData.email = payload.email;
 
   // find academic semester info
   const admissionSemester = await AcademicSemester.findById(
@@ -38,12 +45,33 @@ const createStudentIntoDB = async (password: string, payload: TStudent) => {
     throw new AppError(400, 'Admission semester not found');
   }
 
+  // find department
+  const academicDepartment = await AcademicDepartment.findById(
+    payload.academicDepartment,
+  );
+
+  if (!academicDepartment) {
+    throw new AppError(400, 'Academic department not found');
+  }
+
+  payload.academicFaculty = academicDepartment.academicFaculty;
+
   const session = await mongoose.startSession();
 
   try {
     session.startTransaction();
     //set  generated id
     userData.id = await generateStudentId(admissionSemester);
+
+    if (file) {
+      const imageName = `${payload?.name?.firstName}${userData.id}`;
+      const path = file?.path;
+
+      // send image to cloudinary
+      const { secure_url } = await sendImageToCloudinary(imageName, path);
+
+      payload.profileImg = secure_url as string;
+    }
 
     // create a user (transaction-1)
     const newUser = await User.create([userData], { session }); // array
@@ -79,11 +107,13 @@ const createFacultyIntoDB = async (password: string, payload: TFaculty) => {
   // create a user object
   const userData: Partial<TUser> = {};
 
-  //if password is not given , use deafult password
+  //if password is not given , use default password
   userData.password = password || (config.default_password as string);
 
-  //set student role
+  //set faculty role
   userData.role = 'faculty';
+  // set faculty email
+  userData.email = payload.email;
 
   // find academic department info
   const academicDepartment = await AcademicDepartment.findById(
@@ -93,6 +123,8 @@ const createFacultyIntoDB = async (password: string, payload: TFaculty) => {
   if (!academicDepartment) {
     throw new AppError(400, 'Academic department not found');
   }
+
+  payload.academicFaculty = academicDepartment.academicFaculty;
 
   const session = await mongoose.startSession();
 
@@ -138,8 +170,10 @@ const createAdminIntoDB = async (password: string, payload: TAdmin) => {
   //if password is not given , use deafult password
   userData.password = password || (config.default_password as string);
 
-  //set student role
+  //set admin role
   userData.role = 'admin';
+  // set admin email
+  userData.email = payload.email;
 
   const session = await mongoose.startSession();
 
@@ -177,8 +211,53 @@ const createAdminIntoDB = async (password: string, payload: TAdmin) => {
   }
 };
 
+const changeStatus = async (
+  id: string,
+  payload: {
+    status: string;
+  },
+) => {
+  const result = await User.findByIdAndUpdate(id, payload, {
+    new: true,
+  });
+
+  return result;
+};
+
+const getMe = async (userId: string, role: string) => {
+  // const decoded = verifyToken(token, config.jwt_access_secret as string);
+
+  // const {userId, role} = decoded;
+
+  // console.log(userId, role);
+
+  let result = null;
+
+  if (role === 'student') {
+    result = await Student.findOne({ id: userId })
+      .populate('user')
+      .populate('admissionSemester')
+      .populate({
+        path: 'academicDepartment',
+        populate: {
+          path: 'academicFaculty',
+        },
+      });
+  }
+  if (role === 'admin') {
+    result = await Admin.findOne({ id: userId }).populate('user');
+  }
+  if (role === 'faculty') {
+    result = await Faculty.findOne({ id: userId }).populate('user');
+  }
+
+  return result;
+};
+
 export const UserServices = {
   createStudentIntoDB,
   createFacultyIntoDB,
   createAdminIntoDB,
+  getMe,
+  changeStatus,
 };
