@@ -1,0 +1,196 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EnrolledCourseServices = void 0;
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const http_status_1 = __importDefault(require("http-status"));
+const AppError_1 = __importDefault(require("../../errors/AppError"));
+const OfferedCourse_model_1 = require("../OfferedCourse/OfferedCourse.model");
+const enrolledCourse_model_1 = __importDefault(require("./enrolledCourse.model"));
+const student_model_1 = require("../student/student.model");
+const mongoose_1 = require("mongoose");
+const semesterRegistration_model_1 = require("../semesterRegistration/semesterRegistration.model");
+const course_model_1 = require("../Course/course.model");
+const faculty_model_1 = require("../Faculty/faculty.model");
+const enrolledCourse_utlis_1 = require("./enrolledCourse.utlis");
+const QueryBuilder_1 = __importDefault(require("../../builder/QueryBuilder"));
+const createEnrolledCourseIntoDB = (userId, payload) => __awaiter(void 0, void 0, void 0, function* () {
+    /**
+     * step1: check if the offered course is exists
+     * step2: check if the student is already enrolled
+     * step3: check if the max credits exceed
+     * step3: Create an enrolled course
+     */
+    const { offeredCourse } = payload;
+    const isOfferedCourseExists = yield OfferedCourse_model_1.OfferedCourse.findById(offeredCourse);
+    if (!isOfferedCourseExists) {
+        throw new AppError_1.default(http_status_1.default.NOT_FOUND, 'Offered course not found!');
+    }
+    if (isOfferedCourseExists.maxCapacity <= 0) {
+        throw new AppError_1.default(http_status_1.default.BAD_REQUEST, 'Room is full!');
+    }
+    const student = yield student_model_1.Student.findOne({ id: userId }, { _id: 1 });
+    if (!student) {
+        throw new AppError_1.default(http_status_1.default.NOT_FOUND, 'Student not found!');
+    }
+    // check if the student is already enrolled
+    const isStudentAlreadyEnrolled = yield enrolledCourse_model_1.default.findOne({
+        semesterRegistration: isOfferedCourseExists.semesterRegistration,
+        offeredCourse,
+        student: student === null || student === void 0 ? void 0 : student._id,
+    });
+    if (isStudentAlreadyEnrolled) {
+        throw new AppError_1.default(http_status_1.default.CONFLICT, 'Student is already enrolled!');
+    }
+    // check total credits exceeds maxCredit
+    const course = yield course_model_1.Course.findById(isOfferedCourseExists.course);
+    const currentCredit = course === null || course === void 0 ? void 0 : course.credits;
+    const semesterRegistration = yield semesterRegistration_model_1.SemesterRegistration.findById(isOfferedCourseExists.semesterRegistration).select('maxCredit');
+    const maxCredit = semesterRegistration === null || semesterRegistration === void 0 ? void 0 : semesterRegistration.maxCredit;
+    const enrolledCourses = yield enrolledCourse_model_1.default.aggregate([
+        {
+            $match: {
+                semesterRegistration: isOfferedCourseExists.semesterRegistration,
+                student: student === null || student === void 0 ? void 0 : student._id,
+            },
+        },
+        {
+            $lookup: {
+                from: 'courses',
+                localField: 'course',
+                foreignField: '_id',
+                as: 'enrolledCourseData',
+            },
+        },
+        {
+            $unwind: '$enrolledCourseData',
+        },
+        {
+            $group: {
+                _id: null,
+                totalEnrolledCredits: { $sum: '$enrolledCourseData.credits' },
+            },
+        },
+        {
+            $project: {
+                _id: 0,
+                totalEnrolledCredits: 1,
+            },
+        },
+    ]);
+    // total enrolled credits + new enrolled course credit > maxCredit
+    const totalCredits = enrolledCourses.length > 0 ? enrolledCourses[0].totalEnrolledCredits : 0;
+    if (totalCredits && maxCredit && totalCredits + currentCredit > maxCredit) {
+        throw new AppError_1.default(http_status_1.default.BAD_REQUEST, 'Total credits exceed maximum credit limit!');
+    }
+    const session = yield (0, mongoose_1.startSession)();
+    try {
+        session.startTransaction();
+        const result = yield enrolledCourse_model_1.default.create([
+            {
+                semesterRegistration: isOfferedCourseExists.semesterRegistration,
+                academicSemester: isOfferedCourseExists.academicSemester,
+                academicFaculty: isOfferedCourseExists.academicFaculty,
+                academicDepartment: isOfferedCourseExists.academicDepartment,
+                offeredCourse,
+                course: isOfferedCourseExists.course,
+                student: student === null || student === void 0 ? void 0 : student._id,
+                faculty: isOfferedCourseExists.faculty,
+                isEnrolled: true,
+            },
+        ], { session });
+        if (!result) {
+            throw new AppError_1.default(http_status_1.default.INTERNAL_SERVER_ERROR, 'Failed to enrolled in this course!');
+        }
+        const maxCapacity = isOfferedCourseExists.maxCapacity;
+        yield OfferedCourse_model_1.OfferedCourse.findByIdAndUpdate(offeredCourse, {
+            maxCapacity: maxCapacity - 1,
+        });
+        yield session.commitTransaction();
+        yield session.endSession();
+        return result;
+    }
+    catch (err) {
+        yield session.abortTransaction();
+        yield session.endSession();
+        throw new Error(err);
+    }
+});
+const getMyEnrolledCoursesFromDB = (studentId, query) => __awaiter(void 0, void 0, void 0, function* () {
+    const student = yield student_model_1.Student.findOne({ id: studentId });
+    if (!student) {
+        throw new AppError_1.default(http_status_1.default.NOT_FOUND, 'Student not found!');
+    }
+    const enrolledCourseQuery = new QueryBuilder_1.default(enrolledCourse_model_1.default.find({ student: student._id }).populate('semesterRegistration academicSemester academicFaculty academicDepartment offeredCourse course student faculty'), query);
+    const result = yield enrolledCourseQuery.modelQuery;
+    const meta = yield enrolledCourseQuery.countTotal();
+    return {
+        meta,
+        result,
+    };
+});
+const updateEnrolledCourseMarksIntoDB = (facultyId, payload) => __awaiter(void 0, void 0, void 0, function* () {
+    const { semesterRegistration, offeredCourse, student, courseMarks } = payload;
+    const isSemesterRegistrationExists = yield semesterRegistration_model_1.SemesterRegistration.findById(semesterRegistration);
+    if (!isSemesterRegistrationExists) {
+        throw new AppError_1.default(http_status_1.default.NOT_FOUND, 'Semester Registration not found!');
+    }
+    const isOfferedCourseExists = yield OfferedCourse_model_1.OfferedCourse.findById(offeredCourse);
+    if (!isOfferedCourseExists) {
+        throw new AppError_1.default(http_status_1.default.NOT_FOUND, 'Offered course not found!');
+    }
+    const isStudentExists = yield student_model_1.Student.findById(student);
+    if (!isStudentExists) {
+        throw new AppError_1.default(http_status_1.default.NOT_FOUND, 'Student not found!');
+    }
+    const faculty = yield faculty_model_1.Faculty.findOne({ id: facultyId }, { _id: 1 });
+    if (!faculty) {
+        throw new AppError_1.default(http_status_1.default.FORBIDDEN, 'Faculty not found!');
+    }
+    const isCourseBelongToFaculty = yield enrolledCourse_model_1.default.findOne({
+        semesterRegistration,
+        offeredCourse,
+        student,
+        faculty: faculty._id,
+    });
+    if (!isCourseBelongToFaculty) {
+        throw new AppError_1.default(http_status_1.default.FORBIDDEN, 'Faculty does not have access to this course!');
+    }
+    const modifiedData = Object.assign({}, courseMarks);
+    if (courseMarks === null || courseMarks === void 0 ? void 0 : courseMarks.finalTerm) {
+        const { classTest1, classTest2, midTerm, finalTerm } = isCourseBelongToFaculty.courseMarks;
+        const totalMarks = Math.ceil(classTest1) +
+            Math.ceil(midTerm) +
+            Math.ceil(classTest2) +
+            Math.ceil(finalTerm);
+        const result = (0, enrolledCourse_utlis_1.calculateGradeAndPoints)(totalMarks);
+        modifiedData.grade = result.grade;
+        modifiedData.gradePoints = result.gradePoints;
+        modifiedData.isCompleted = true;
+    }
+    if (courseMarks && Object.keys(courseMarks).length) {
+        for (const [key, value] of Object.entries(courseMarks)) {
+            modifiedData[`courseMarks.${key}`] = value;
+        }
+    }
+    const result = yield enrolledCourse_model_1.default.findByIdAndUpdate(isCourseBelongToFaculty._id, modifiedData, {
+        new: true,
+    });
+    return result;
+});
+exports.EnrolledCourseServices = {
+    createEnrolledCourseIntoDB,
+    getMyEnrolledCoursesFromDB,
+    updateEnrolledCourseMarksIntoDB,
+};
